@@ -21,7 +21,7 @@ class GetSearchTasks extends \Civi\Api4\Generic\AbstractAction {
 
   /**
    * @param \Civi\Api4\Generic\Result $result
-   * @throws \API_Exception
+   * @throws \CRM_Core_Exception
    */
   public function _run(\Civi\Api4\Generic\Result $result) {
     // Adding checkPermissions filters out actions the user is not allowed to perform
@@ -79,10 +79,16 @@ class GetSearchTasks extends \Civi\Api4\Generic\AbstractAction {
 
     if (array_key_exists('delete', $entity['actions'])) {
       $tasks[$entity['name']]['delete'] = [
-        'module' => 'crmSearchTasks',
         'title' => E::ts('Delete %1', [1 => $entity['title_plural']]),
         'icon' => 'fa-trash',
-        'uiDialog' => ['templateUrl' => '~/crmSearchTasks/crmSearchTaskDelete.html'],
+        'apiBatch' => [
+          'action' => 'delete',
+          'params' => NULL,
+          'confirmMsg' => E::ts('Are you sure you want to delete %1 %2?'),
+          'runMsg' => E::ts('Deleting %1 %2...'),
+          'successMsg' => E::ts('Successfully deleted %1 %2.'),
+          'errorMsg' => E::ts('An error occurred while attempting to delete %1 %2.'),
+        ],
       ];
     }
 
@@ -140,7 +146,7 @@ class GetSearchTasks extends \Civi\Api4\Generic\AbstractAction {
       // FIXME: tasks() function always checks permissions, should respect `$this->checkPermissions`
       foreach (\CRM_Contribute_Task::tasks() as $id => $task) {
         if (!empty($task['url'])) {
-          $key = \CRM_Core_Key::get(\CRM_Utils_Array::first((array) $task['class']), TRUE);
+          $key = \CRM_Core_Key::get('CRM_Contribute_Controller_Task', TRUE);
           $tasks[$entity['name']]['contribution.' . $id] = [
             'title' => $task['title'],
             'icon' => $task['icon'] ?? 'fa-gear',
@@ -168,17 +174,49 @@ class GetSearchTasks extends \Civi\Api4\Generic\AbstractAction {
       $null, $null, $null, 'civicrm_searchKitTasks'
     );
 
-    usort($tasks[$entity['name']], function($a, $b) {
-      return strnatcasecmp($a['title'], $b['title']);
-    });
-
     foreach ($tasks[$entity['name']] as $name => &$task) {
       $task['name'] = $name;
       // Add default for number of rows action requires
       $task += ['number' => '> 0'];
     }
 
-    $result->exchangeArray(array_values($tasks[$entity['name']]));
+    usort($tasks[$entity['name']], function($a, $b) {
+      return strnatcasecmp($a['title'], $b['title']);
+    });
+
+    $result->exchangeArray($tasks[$entity['name']]);
+  }
+
+  public static function fields() {
+    return [
+      [
+        'name' => 'name',
+      ],
+      [
+        'name' => 'module',
+      ],
+      [
+        'name' => 'title',
+      ],
+      [
+        'name' => 'icon',
+      ],
+      [
+        'number' => 'icon',
+      ],
+      [
+        'name' => 'apiBatch',
+        'data_type' => 'Array',
+      ],
+      [
+        'name' => 'uiDialog',
+        'data_type' => 'Array',
+      ],
+      [
+        'name' => 'crmPopup',
+        'data_type' => 'Array',
+      ],
+    ];
   }
 
 }

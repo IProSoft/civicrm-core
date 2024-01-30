@@ -280,7 +280,10 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
       $this->setFormAmountFields($this->_params['priceSetId']);
     }
 
-    $this->_params['tax_amount'] = $this->get('tax_amount');
+    if (!empty($this->get('tax_amount'))) {
+      CRM_Core_Error::deprecatedWarning('tax_amount should be not passed in');
+      $this->_params['tax_amount'] = $this->get('tax_amount');
+    }
     $this->_useForMember = $this->get('useForMember');
 
     CRM_Contribute_Form_AbstractEditPayment::formatCreditCardDetails($this->_params);
@@ -492,15 +495,18 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
     // Make a copy of line items array to use for display only
     $tplLineItems = $this->_lineItem;
     if (CRM_Invoicing_Utils::isInvoicingEnabled()) {
-      // @todo $params seems like exactly the wrong place to get totalTaxAmount from
-      // this is a calculated variable so we it should be transparent how we
-      // calculated it rather than coming from 'params'
-      $this->assign('totalTaxAmount', $params['tax_amount']);
+      $taxAmount = 0;
+      foreach ($tplLineItems ?? [] as $lineItems) {
+        foreach ($lineItems as $lineItem) {
+          $taxAmount += (float) ($lineItem['tax_amount'] ?? 0);
+        }
+      }
+
+      $this->assign('totalTaxAmount', $taxAmount);
+      $this->assign('taxTerm', CRM_Invoicing_Utils::getTaxTerm());
     }
-    $this->assignLineItemsToTemplate($tplLineItems);
 
     $isDisplayLineItems = $this->_priceSetId && !CRM_Core_DAO::getFieldValue('CRM_Price_DAO_PriceSet', $this->_priceSetId, 'is_quick_config');
-
     $this->assign('isDisplayLineItems', $isDisplayLineItems);
 
     if (!$isDisplayLineItems) {
@@ -508,6 +514,9 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
       // whereas isDisplayLineItems is specific & clear.
       $this->assign('is_quick_config', 1);
       $this->_params['is_quick_config'] = 1;
+    }
+    else {
+      $this->assignLineItemsToTemplate($tplLineItems);
     }
 
     if (!empty($params['selectProduct']) && $params['selectProduct'] !== 'no_thanks') {
@@ -565,8 +574,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
     $this->assign('priceSetID', $this->_priceSetId);
 
     // The concept of contributeMode is deprecated.
-    // the is_monetary concept probably should be too as it can be calculated from
-    // the existence of 'amount' & seems fragile.
     if ($this->_contributeMode === 'notify' ||
       $this->_amount <= 0.0 || $this->_params['is_pay_later']
     ) {
@@ -662,7 +669,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @return bool
    *   Is this a separate membership payment
    *
-   * @throws \CiviCRM_API3_Exception
    * @throws \CRM_Core_Exception
    */
   private function buildMembershipBlock($cid, $selectedMembershipTypeID = NULL, $isTest = NULL) {
@@ -1035,7 +1041,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @return \CRM_Contribute_DAO_Contribution
    *
    * @throws \CRM_Core_Exception
-   * @throws \CiviCRM_API3_Exception
    * @todo - this code was previously shared with the backoffice form - some parts of this
    * function may relate to that form, not this one.
    *
@@ -1124,6 +1129,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
       // lets store it in the form variable so postProcess hook can get to this and use it
       $form->_contributionID = $contribution->id;
     }
+    // @fixme: This is assigned to the smarty template for the receipt. It's value should be calculated and not taken from $params.
     $form->assign('totalTaxAmount', $params['tax_amount'] ?? NULL);
 
     // process soft credit / pcp params first
@@ -1321,7 +1327,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
         \Civi\Api4\Relationship::create(FALSE)
           ->addValue('contact_id_a', $contactID)
           ->addValue('contact_id_b', $orgID)
-          ->addValue('relationship_type_id', $relTypeId = CRM_Contact_BAO_RelationshipType::getEmployeeRelationshipTypeID())
+          ->addValue('relationship_type_id', CRM_Contact_BAO_RelationshipType::getEmployeeRelationshipTypeID())
           ->addValue('is_permission_a_b:name', 'View and update')
           ->execute();
       }
@@ -1485,7 +1491,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    *   Line items for payment options chosen on the form.
    *
    * @throws \CRM_Core_Exception
-   * @throws \CiviCRM_API3_Exception
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
   protected function postProcessMembership(
@@ -1727,9 +1732,9 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
                 'pan_truncation' => $result['result']['pan_truncation'] ?? NULL,
               ]);
             }
-            catch (CiviCRM_API3_Exception $e) {
+            catch (CRM_Core_Exception $e) {
               if ($e->getErrorCode() != 'contribution_completed') {
-                \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CiviCRM_API3_Exception: ' . $e->getMessage());
+                \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CRM_Core_Exception: ' . $e->getMessage());
                 throw new CRM_Core_Exception('Failed to update contribution in database');
               }
             }
@@ -1765,9 +1770,9 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
             'is_transactional' => FALSE,
           ]);
         }
-        catch (CiviCRM_API3_Exception $e) {
+        catch (CRM_Core_Exception $e) {
           if ($e->getErrorCode() != 'contribution_completed') {
-            \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CiviCRM_API3_Exception: ' . $e->getMessage());
+            \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CRM_Core_Exception: ' . $e->getMessage());
             throw new CRM_Core_Exception('Failed to update contribution in database');
           }
         }
@@ -1812,7 +1817,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @return array []
    *
    * @throws \CRM_Core_Exception
-   * @throws \CiviCRM_API3_Exception
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
   private function processSecondaryFinancialTransaction($contactID, $tempParams, $isTest, $lineItems, $minimumFee,
@@ -1993,7 +1997,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @param array $params
    *
    * @throws \CRM_Core_Exception
-   * @throws \CiviCRM_API3_Exception
    * @throws \Civi\API\Exception\UnauthorizedException
    */
   public static function submit($params) {
@@ -2090,7 +2093,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @param array $params
    *
    * @return array
-   * @throws CiviCRM_API3_Exception
+   * @throws CRM_Core_Exception
    */
   public static function getFormParams($id, array $params) {
     if (!isset($params['is_pay_later'])) {
@@ -2120,7 +2123,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @return array
    *
    * @throws \CRM_Core_Exception
-   * @throws \CiviCRM_API3_Exception
    * @throws \Civi\API\Exception\UnauthorizedException
    */
   protected function processFormSubmission($contactID) {
@@ -2411,9 +2413,9 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
               'pan_truncation' => $result['pan_truncation'] ?? NULL,
             ]);
           }
-          catch (CiviCRM_API3_Exception $e) {
+          catch (CRM_Core_Exception $e) {
             if ($e->getErrorCode() != 'contribution_completed') {
-              \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CiviCRM_API3_Exception: ' . $e->getMessage());
+              \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CRM_Core_Exception: ' . $e->getMessage());
               throw new CRM_Core_Exception('Failed to update contribution in database');
             }
           }
@@ -2593,7 +2595,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @param array $result
    * @param int $contributionID
    *
-   * @throws \CiviCRM_API3_Exception
+   * @throws \CRM_Core_Exception
    * @throws \Exception
    */
   protected function completeTransaction($result, $contributionID) {
@@ -2611,9 +2613,9 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
           'pan_truncation' => $result['pan_truncation'] ?? NULL,
         ]);
       }
-      catch (CiviCRM_API3_Exception $e) {
+      catch (CRM_Core_Exception $e) {
         if ($e->getErrorCode() != 'contribution_completed') {
-          \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CiviCRM_API3_Exception: ' . $e->getMessage());
+          \Civi::log()->error('CRM_Contribute_Form_Contribution_Confirm::completeTransaction CRM_Core_Exception: ' . $e->getMessage());
           throw new CRM_Core_Exception('Failed to update contribution in database');
         }
       }
@@ -2865,7 +2867,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    *
    * @return array
    * @throws \CRM_Core_Exception
-   * @throws \CiviCRM_API3_Exception
    */
   public static function unitTestAccessTolegacyProcessMembership($contactID, $membershipTypeID, $membershipID = NULL) {
     return self::legacyProcessMembership(
@@ -2905,7 +2906,6 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    *
    * @return array
    * @throws \CRM_Core_Exception
-   * @throws \CiviCRM_API3_Exception
    */
   protected static function legacyProcessMembership($contactID, $membershipTypeID, $is_test, $changeToday, $modifiedID, $customFieldsFormatted, $numRenewTerms, $membershipID, $pending, $contributionRecurID, $membershipSource, $isPayLater, $memParams = [], $contribution = NULL, $lineItems = []) {
     $renewalMode = $updateStatusId = FALSE;

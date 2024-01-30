@@ -94,9 +94,13 @@
         return this.settings.actions || this.settings.draggable || (this.settings.tally && this.settings.tally.label);
       },
 
+      getFilters: function() {
+        return _.assign({}, this.getAfformFilters(), this.filters);
+      },
+
       getAfformFilters: function() {
         return _.pick(this.afFieldset ? this.afFieldset.getFieldData() : {}, function(val) {
-          return val !== null && (_.includes(['boolean', 'number'], typeof val) || val.length);
+          return typeof val !== 'undefined' && val !== null && (_.includes(['boolean', 'number', 'object'], typeof val) || val.length);
         });
       },
 
@@ -109,9 +113,19 @@
           sort: this.sort,
           limit: this.limit,
           seed: this.seed,
-          filters: _.assign({}, this.getAfformFilters(), this.filters),
+          filters: this.getFilters(),
           afform: this.afFieldset ? this.afFieldset.getFormName() : null
         };
+      },
+
+      // Get path for the addButton
+      getButtonUrl: function() {
+        var path = this.settings.addButton.path,
+          filters = this.getFilters();
+        _.each(filters, function(value, key) {
+          path = path.replace('[' + key + ']', value);
+        });
+        return CRM.url(path);
       },
 
       onClickSearchButton: function() {
@@ -144,7 +158,7 @@
           if (!ctrl.rowCount || editedRow) {
             if (!ctrl.limit || ctrl.results.length < ctrl.limit) {
               ctrl.rowCount = ctrl.results.length;
-            } else if (ctrl.settings.pager) {
+            } else if (ctrl.settings.pager || ctrl.settings.headerCount) {
               var params = ctrl.getApiParams('row_count');
               crmApi4('SearchDisplay', 'run', params).then(function(result) {
                 ctrl.rowCount = result.count;

@@ -729,7 +729,7 @@ abstract class CRM_Utils_System_Base {
       }
     }
     else {
-      $userFrameworkResourceURL = NULL;
+      $userFrameworkResourceURL = '';
     }
 
     return [
@@ -1108,6 +1108,10 @@ abstract class CRM_Utils_System_Base {
    */
   public function shouldExitAfterFatal() {
     return TRUE;
+  }
+
+  public function checkCleanurls() {
+    return [];
   }
 
 }

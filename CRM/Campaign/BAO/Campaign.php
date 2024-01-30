@@ -48,7 +48,7 @@ class CRM_Campaign_BAO_Campaign extends CRM_Campaign_DAO_Campaign {
       }
     }
 
-    /* @var \CRM_Campaign_DAO_Campaign $campaign */
+    /** @var \CRM_Campaign_DAO_Campaign $campaign */
     $campaign = self::writeRecord($params);
 
     /* Create the campaign group record */
@@ -255,12 +255,13 @@ Order By  camp.title";
 
       //do check for component.
       if ($doCheckForComponent) {
-        $campaigns['isCampaignEnabled'] = $isValid = self::isCampaignEnable();
+        $campaigns['isCampaignEnabled'] = $isValid = self::isComponentEnabled();
       }
 
       //do check for permissions.
       if ($doCheckForPermissions) {
-        $campaigns['hasAccessCampaign'] = $isValid = self::accessCampaign();
+        $campaigns['hasAccessCampaign'] = self::accessCampaign();
+        $campaigns['hasViewCampaign'] = $isValid = self::viewCampaign();
       }
 
       //finally retrieve campaigns from db.
@@ -283,11 +284,12 @@ Order By  camp.title";
 
   /**
    * Is CiviCampaign enabled.
-   *
+   * @deprecated
    * @return bool
    */
   public static function isCampaignEnable(): bool {
-    return CRM_Core_Component::isEnabled('CiviCampaign');
+    CRM_Core_Error::deprecatedFunctionWarning('isComponentEnabled');
+    return self::isComponentEnabled();
   }
 
   /**
@@ -512,6 +514,24 @@ INNER JOIN  civicrm_group grp ON ( grp.id = campgrp.entity_id )
   }
 
   /**
+   * @return bool
+   */
+  public static function viewCampaign() {
+    static $allowView = NULL;
+
+    if (!isset($allowView)) {
+      $allowView = FALSE;
+      if (self::accessCampaign() ||
+        CRM_Core_Permission::check('view campaign')
+      ) {
+        $allowView = TRUE;
+      }
+    }
+
+    return $allowView;
+  }
+
+  /**
    * Add select element for campaign
    * and assign needful info to templates.
    *
@@ -566,7 +586,7 @@ INNER JOIN  civicrm_group grp ON ( grp.id = campgrp.entity_id )
     $campaignInfo = [];
     $campaignDetails = self::getPermissionedCampaigns(NULL, NULL, FALSE, FALSE, FALSE, TRUE);
     $campaigns = $campaignDetails['campaigns'] ?? NULL;
-    $hasAccessCampaign = $campaignDetails['hasAccessCampaign'] ?? NULL;
+    $hasAccessCampaign = $campaignDetails['hasViewCampaign'] ?? NULL;
     $isCampaignEnabled = $campaignDetails['isCampaignEnabled'] ?? NULL;
 
     $showCampaignInSearch = FALSE;

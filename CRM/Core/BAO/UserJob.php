@@ -15,6 +15,10 @@
  * @copyright CiviCRM LLC https://civicrm.org/licensing
  */
 
+use Civi\Api4\UserJob;
+use Civi\Core\ClassScanner;
+use Civi\UserJob\UserJobInterface;
+
 /**
  * This class contains user jobs functionality.
  */
@@ -35,7 +39,7 @@ class CRM_Core_BAO_UserJob extends CRM_Core_DAO_UserJob implements \Civi\Core\Ho
     /** @var \CRM_Queue_Queue $queue */
     $queue = $e->queue;
     $userJobId = static::findUserJobId($queue->getName());
-    if ($userJobId && $queue->numberOfItems() < 1) {
+    if ($userJobId && $queue->getStatistic('total') < 1) {
       $queue->setStatus('completed');
     }
   }
@@ -45,14 +49,14 @@ class CRM_Core_BAO_UserJob extends CRM_Core_DAO_UserJob implements \Civi\Core\Ho
    *
    * @param \CRM_Queue_Queue $queue
    * @param string $status
-   * @throws \API_Exception
-   * @throws \Civi\API\Exception\UnauthorizedException
+   * @throws \CRM_Core_Exception
+   *
    * @see \CRM_Utils_Hook::queueStatus()
    */
-  public static function hook_civicrm_queueStatus(CRM_Queue_Queue $queue, string $status) {
+  public static function hook_civicrm_queueStatus(CRM_Queue_Queue $queue, string $status): void {
     $userJobId = static::findUserJobId($queue->getName());
     if ($userJobId && $status === 'completed') {
-      \Civi\Api4\UserJob::update()
+      UserJob::update(FALSE)
         ->addWhere('id', '=', $userJobId)
         ->setValues(['status_id' => 1])
         ->execute();
@@ -132,52 +136,32 @@ class CRM_Core_BAO_UserJob extends CRM_Core_DAO_UserJob implements \Civi\Core\Ho
   /**
    * Get the types Import Jobs.
    *
-   * This is largely a placeholder at this stage. It will likely wind
-   * up as an option value so extensions can add different types.
-   *
-   * However, for now it just holds the one type being worked on.
+   * Each type is keyed by it's id and has
+   *   -id
+   *   -name
+   *   -label
+   *   -class
+   *   -entity
    *
    * @return array
    */
   public static function getTypes(): array {
-    return [
-      [
-        'id' => 1,
-        'name' => 'contact_import',
-        'label' => ts('Contact Import'),
-        'class' => 'CRM_Contact_Import_Parser_Contact',
-      ],
-      [
-        'id' => 2,
-        'name' => 'contribution_import',
-        'label' => ts('Contribution Import'),
-        'class' => 'CRM_Contribute_Import_Parser_Contribution',
-      ],
-      [
-        'id' => 3,
-        'name' => 'membership_import',
-        'label' => ts('Membership Import'),
-        'class' => 'CRM_Member_Import_Parser_Membership',
-      ],
-      [
-        'id' => 4,
-        'name' => 'activity_import',
-        'label' => ts('Activity Import'),
-        'class' => 'CRM_Activity_Import_Parser_Activity',
-      ],
-      [
-        'id' => 5,
-        'name' => 'participant_import',
-        'label' => ts('Participant Import'),
-        'class' => 'CRM_Event_Import_Parser_Participant',
-      ],
-      [
-        'id' => 6,
-        'name' => 'custom_field_import',
-        'label' => ts('Multiple Value Custom Field Import'),
-        'class' => 'CRM_Custom_Import_Parser_Api',
-      ],
-    ];
+    $types = Civi::cache()->get('UserJobTypes');
+    if ($types === NULL) {
+      $types = [];
+      $classes = ClassScanner::get(['interface' => UserJobInterface::class]);
+      /** @var \Civi\UserJob\UserJobInterface $class */
+      foreach ($classes as $class) {
+        $declaredTypes = $class::getUserJobInfo();
+        foreach ($declaredTypes as $index => $declaredType) {
+          $declaredTypes[$index]['class'] = $class;
+        }
+        $types = array_merge($types, $declaredTypes);
+      }
+      Civi::cache()->set('UserJobTypes', $types);
+    }
+    // Rekey to numeric to prevent https://lab.civicrm.org/dev/core/-/issues/3719
+    return array_values($types);
   }
 
 }

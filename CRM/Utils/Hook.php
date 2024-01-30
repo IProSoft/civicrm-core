@@ -311,7 +311,7 @@ abstract class CRM_Utils_Hook {
   public function requireCiviModules(&$moduleList) {
     $civiModules = CRM_Core_PseudoConstant::getModuleExtensions();
     foreach ($civiModules as $civiModule) {
-      if (!file_exists($civiModule['filePath'])) {
+      if (!file_exists($civiModule['filePath'] ?? '')) {
         CRM_Core_Session::setStatus(
           ts('Error loading module file (%1). Please restore the file or disable the module.',
             [1 => $civiModule['filePath']]),
@@ -499,7 +499,7 @@ abstract class CRM_Utils_Hook {
    *   The name of the form.
    * @param array &$fields the POST parameters as filtered by QF
    * @param array &$files the FILES parameters as sent in by POST
-   * @param array &$form the form object
+   * @param CRM_Core_Form &$form the form object
    * @param array &$errors the array of errors.
    *
    * @return mixed
@@ -1677,6 +1677,22 @@ abstract class CRM_Utils_Hook {
   }
 
   /**
+   * (EXPERIMENTAL) Scan extensions for a list of auto-registered interfaces.
+   *
+   * This hook is currently experimental. It is a means to implementing `mixin/scan-classes@1`.
+   * If there are no major difficulties circa 5.55, then it can be marked stable.
+   *
+   * @param string[] $classes
+   *   List of classes which may be of interest to the class-scanner.
+   */
+  public static function scanClasses(array &$classes) {
+    self::singleton()->invoke(['classes'], $classes, self::$_nullObject,
+      self::$_nullObject, self::$_nullObject, self::$_nullObject, self::$_nullObject,
+      'civicrm_scanClasses'
+    );
+  }
+
+  /**
    * This hook is called when we are determining the contactID for a specific
    * email address
    *
@@ -1865,11 +1881,37 @@ abstract class CRM_Utils_Hook {
   }
 
   /**
-   * This hook is called when a module-extension is installed.
-   * Each module will receive hook_civicrm_install during its own installation (but not during the
-   * installation of unrelated modules).
+   * Run early installation steps for an extension. Ex: Create new MySQL table.
+   *
+   * This dispatches directly to each new extension. You will only receive notices for your own installation.
+   *
+   * If multiple extensions are installed simultaneously, they will all run
+   * `hook_install`/`hook_enable` back-to-back (in order of dependency).
+   *
+   * This runs BEFORE refreshing major caches and services (such as
+   * `ManagedEntities` and `CRM_Logging_Schema`).
+   *
+   * @see https://docs.civicrm.org/dev/en/latest/hooks/hook_civicrm_install
    */
   public static function install() {
+    // Actually invoke via CRM_Extension_Manager_Module::callHook
+    throw new \RuntimeException(sprintf("The method %s::%s is just a documentation stub and should not be invoked directly.", __CLASS__, __FUNCTION__));
+  }
+
+  /**
+   * Run later installation steps. Ex: Call a bespoke API-job for the first time.
+   *
+   * This dispatches directly to each new extension. You will only receive notices for your own installation.
+   *
+   * If multiple extensions are installed simultaneously, they will all run
+   * `hook_postInstall` back-to-back (in order of dependency).
+   *
+   * This runs AFTER refreshing major caches and services (such as
+   * `ManagedEntities` and `CRM_Logging_Schema`).
+   *
+   * @see https://docs.civicrm.org/dev/en/latest/hooks/hook_civicrm_postInstall
+   */
+  public static function postInstall() {
     // Actually invoke via CRM_Extension_Manager_Module::callHook
     throw new \RuntimeException(sprintf("The method %s::%s is just a documentation stub and should not be invoked directly.", __CLASS__, __FUNCTION__));
   }

@@ -13,7 +13,7 @@ function _afform_fields_filter($params) {
   $result = [];
   $fields = \Civi\Api4\Afform::getfields(FALSE)->setAction('create')->execute()->indexBy('name');
   foreach ($fields as $fieldName => $field) {
-    if (isset($params[$fieldName])) {
+    if (array_key_exists($fieldName, $params)) {
       $result[$fieldName] = $params[$fieldName];
 
       if ($field['data_type'] === 'Boolean' && !is_bool($params[$fieldName])) {
@@ -49,6 +49,7 @@ function afform_civicrm_config(&$config) {
   Civi::$statics[__FUNCTION__] = 1;
 
   $dispatcher = Civi::dispatcher();
+  $dispatcher->addListener('civi.afform.validate', ['\Civi\Api4\Action\Afform\Submit', 'validateRequiredFields'], 10);
   $dispatcher->addListener('civi.afform.submit', ['\Civi\Api4\Action\Afform\Submit', 'processGenericEntity'], 0);
   $dispatcher->addListener('civi.afform.submit', ['\Civi\Api4\Action\Afform\Submit', 'preprocessContact'], 10);
   $dispatcher->addListener('civi.afform.submit', ['\Civi\Api4\Action\Afform\Submit', 'processRelationships'], 1);
@@ -140,32 +141,66 @@ function afform_civicrm_managed(&$entities, $modules) {
     // This AfformScanner instance only lives during this method call, and it feeds off the regular cache.
     $scanner = new CRM_Afform_AfformScanner();
   }
+  $domains = NULL;
 
   foreach ($scanner->getMetas() as $afform) {
-    if (empty($afform['is_dashlet']) || empty($afform['name'])) {
+    if (empty($afform['name'])) {
       continue;
     }
-    $entities[] = [
-      'module' => E::LONG_NAME,
-      'name' => 'afform_dashlet_' . $afform['name'],
-      'entity' => 'Dashboard',
-      'update' => 'always',
-      // ideal cleanup policy might be to (a) deactivate if used and (b) remove if unused
-      'cleanup' => 'always',
-      'params' => [
-        'version' => 4,
-        'values' => [
-          // Q: Should we loop through all domains?
-          'domain_id' => 'current_domain',
-          'is_active' => TRUE,
-          'name' => $afform['name'],
-          'label' => $afform['title'] ?? E::ts('(Untitled)'),
-          'directive' => _afform_angular_module_name($afform['name'], 'dash'),
-          'permission' => "@afform:" . $afform['name'],
-          'url' => NULL,
+    if (!empty($afform['is_dashlet'])) {
+      $entities[] = [
+        'module' => E::LONG_NAME,
+        'name' => 'afform_dashlet_' . $afform['name'],
+        'entity' => 'Dashboard',
+        'update' => 'always',
+        // ideal cleanup policy might be to (a) deactivate if used and (b) remove if unused
+        'cleanup' => 'always',
+        'params' => [
+          'version' => 4,
+          'values' => [
+            // Q: Should we loop through all domains?
+            'domain_id' => 'current_domain',
+            'is_active' => TRUE,
+            'name' => $afform['name'],
+            'label' => $afform['title'] ?? E::ts('(Untitled)'),
+            'directive' => _afform_angular_module_name($afform['name'], 'dash'),
+            'permission' => "@afform:" . $afform['name'],
+            'url' => NULL,
+          ],
         ],
-      ],
-    ];
+      ];
+    }
+    if (!empty($afform['navigation']) && !empty($afform['server_route'])) {
+      $domains = $domains ?: \Civi\Api4\Domain::get(FALSE)->addSelect('id')->execute();
+      foreach ($domains as $domain) {
+        $params = [
+          'version' => 4,
+          'values' => [
+            'name' => $afform['name'],
+            'label' => $afform['navigation']['label'] ?: $afform['title'],
+            'permission' => (array) $afform['permission'],
+            'permission_operator' => 'OR',
+            'weight' => $afform['navigation']['weight'] ?? 0,
+            'url' => $afform['server_route'],
+            'is_active' => 1,
+            'icon' => 'crm-i ' . $afform['icon'],
+            'domain_id' => $domain['id'],
+          ],
+          'match' => ['domain_id', 'name'],
+        ];
+        if (!empty($afform['navigation']['parent'])) {
+          $params['values']['parent_id.name'] = $afform['navigation']['parent'];
+        }
+        $entities[] = [
+          'module' => E::LONG_NAME,
+          'name' => 'navigation_' . $afform['name'] . '_' . $domain['id'],
+          'cleanup' => 'always',
+          'update' => 'unmodified',
+          'entity' => 'Navigation',
+          'params' => $params,
+        ];
+      }
+    }
   }
 }
 
@@ -178,25 +213,25 @@ function afform_civicrm_tabset($tabsetName, &$tabs, $context) {
   if ($tabsetName !== 'civicrm/contact/view') {
     return;
   }
-  $scanner = \Civi::service('afform_scanner');
+  $afforms = Civi\Api4\Afform::get(FALSE)
+    ->addWhere('contact_summary', '=', 'tab')
+    ->addSelect('name', 'title', 'icon', 'module_name', 'directive_name')
+    ->execute();
   $weight = 111;
-  foreach ($scanner->getMetas() as $afform) {
-    if (!empty($afform['contact_summary']) && $afform['contact_summary'] === 'tab') {
-      $module = _afform_angular_module_name($afform['name']);
-      $tabs[] = [
-        'id' => $afform['name'],
-        'title' => $afform['title'],
-        'weight' => $weight++,
-        'icon' => 'crm-i fa-list-alt',
-        'is_active' => TRUE,
-        'template' => 'afform/contactSummary/AfformTab.tpl',
-        'module' => $module,
-        'directive' => _afform_angular_module_name($afform['name'], 'dash'),
-      ];
-      // If this is the real contact summary page (and not a callback from ContactLayoutEditor), load module.
-      if (empty($context['caller'])) {
-        Civi::service('angularjs.loader')->addModules($module);
-      }
+  foreach ($afforms as $afform) {
+    $tabs[] = [
+      'id' => $afform['name'],
+      'title' => $afform['title'],
+      'weight' => $weight++,
+      'icon' => 'crm-i ' . ($afform['icon'] ?: 'fa-list-alt'),
+      'is_active' => TRUE,
+      'template' => 'afform/contactSummary/AfformTab.tpl',
+      'module' => $afform['module_name'],
+      'directive' => $afform['directive_name'],
+    ];
+    // If this is the real contact summary page (and not a callback from ContactLayoutEditor), load module.
+    if (empty($context['caller'])) {
+      Civi::service('angularjs.loader')->addModules($afform['module_name']);
     }
   }
 }
@@ -207,7 +242,7 @@ function afform_civicrm_tabset($tabsetName, &$tabs, $context) {
  * Adds afforms as contact summary blocks.
  */
 function afform_civicrm_pageRun(&$page) {
-  if (get_class($page) !== 'CRM_Contact_Page_View_Summary') {
+  if (!in_array(get_class($page), ['CRM_Contact_Page_View_Summary', 'CRM_Contact_Page_View_Print'])) {
     return;
   }
   $scanner = \Civi::service('afform_scanner');
@@ -302,7 +337,7 @@ function afform_civicrm_angularModules(&$angularModules) {
  *   The module definition.
  * @return array
  *   Array(string $filename => string $html).
- * @throws API_Exception
+ * @throws CRM_Core_Exception
  */
 function _afform_get_partials($moduleName, $module) {
   $afform = civicrm_api4('Afform', 'get', [
@@ -389,7 +424,7 @@ function afform_civicrm_alterMenu(&$items) {
  */
 function afform_civicrm_permission(&$permissions) {
   $permissions['administer afform'] = [
-    E::ts('Form Builder: edit and delete forms'),
+    E::ts('FormBuilder: edit and delete forms'),
     E::ts('Allows non-admin users to create, update and delete forms'),
   ];
 }
@@ -465,14 +500,10 @@ function _afform_clear() {
 function _afform_angular_module_name($fileBaseName, $format = 'camel') {
   switch ($format) {
     case 'camel':
-      $camelCase = '';
-      foreach (preg_split('/[-_ ]/', $fileBaseName, NULL, PREG_SPLIT_NO_EMPTY) as $shortNamePart) {
-        $camelCase .= ucfirst($shortNamePart);
-      }
-      return strtolower($camelCase[0]) . substr($camelCase, 1);
+      return \CRM_Utils_String::convertStringToCamel($fileBaseName, FALSE);
 
     case 'dash':
-      return strtolower(implode('-', preg_split('/[-_ ]|(?=[A-Z])/', $fileBaseName, NULL, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE)));
+      return \CRM_Utils_String::convertStringToDash($fileBaseName);
 
     default:
       throw new \Exception("Unrecognized format");
@@ -492,6 +523,11 @@ function afform_civicrm_alterApiRoutePermissions(&$permissions, $entity, $action
       $permissions = CRM_Core_Permission::ALWAYS_ALLOW_PERMISSION;
     }
   }
+  // This is temporarily stuck here, but probably belongs in core (until this hook is finally abolished)
+  elseif ($action === 'autocomplete') {
+    // Autocomplete widget must be accessible by anonymous users. Permissions are checked internally.
+    $permissions = CRM_Core_Permission::ALWAYS_ALLOW_PERMISSION;
+  }
 }
 
 /**
@@ -502,7 +538,7 @@ function afform_civicrm_alterApiRoutePermissions(&$permissions, $entity, $action
 function afform_civicrm_preProcess($formName, &$form) {
   if ($formName === 'CRM_Core_Form_ShortCode') {
     $form->components['afform'] = [
-      'label' => E::ts('Form Builder'),
+      'label' => E::ts('FormBuilder'),
       'select' => [
         'key' => 'name',
         'entity' => 'Afform',

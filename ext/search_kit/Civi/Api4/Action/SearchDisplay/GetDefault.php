@@ -2,6 +2,7 @@
 
 namespace Civi\Api4\Action\SearchDisplay;
 
+use Civi\Api4\Generic\Traits\SavedSearchInspectorTrait;
 use Civi\Api4\SavedSearch;
 use Civi\Api4\Utils\FormattingUtil;
 use Civi\Search\Display;
@@ -39,7 +40,7 @@ class GetDefault extends \Civi\Api4\Generic\AbstractAction {
   /**
    * @param \Civi\Api4\Generic\Result $result
    * @throws UnauthorizedException
-   * @throws \API_Exception
+   * @throws \CRM_Core_Exception
    */
   public function _run(\Civi\Api4\Generic\Result $result) {
     // Only SearchKit admins can use this in unsecured "preview mode"
@@ -148,7 +149,9 @@ class GetDefault extends \Civi\Api4\Generic\AbstractAction {
     if ($expr instanceof SqlEquation) {
       $args = [];
       foreach ($expr->getArgs() as $arg) {
-        $args[] = $this->getColumnLabel($arg['expr']);
+        if (is_array($arg) && !empty($arg['expr'])) {
+          $args[] = $this->getColumnLabel(SqlExpression::convert($arg['expr']));
+        }
       }
       return '(' . implode(',', array_filter($args)) . ')';
     }
@@ -198,7 +201,7 @@ class GetDefault extends \Civi\Api4\Generic\AbstractAction {
    */
   private function getColumnLink(&$col, $clause) {
     if ($clause['expr'] instanceof SqlField || $clause['expr'] instanceof SqlFunctionGROUP_CONCAT) {
-      $field = $clause['fields'][0] ?? NULL;
+      $field = \CRM_Utils_Array::first($clause['fields'] ?? []);
       if ($field &&
         CoreUtil::getInfoItem($field['entity'], 'label_field') === $field['name'] &&
         !empty(CoreUtil::getInfoItem($field['entity'], 'paths')['view'])

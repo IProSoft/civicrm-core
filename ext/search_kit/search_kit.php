@@ -11,7 +11,6 @@ use CRM_Search_ExtensionUtil as E;
 function search_kit_civicrm_config(&$config) {
   _search_kit_civix_civicrm_config($config);
   Civi::dispatcher()->addListener('hook_civicrm_alterAngular', ['\Civi\Search\AfformSearchMetadataInjector', 'preprocess'], 1000);
-  Civi::dispatcher()->addSubscriber(new Civi\Api4\Event\Subscriber\SearchKitSubscriber());
 }
 
 /**
@@ -32,8 +31,8 @@ function search_kit_civicrm_container($container) {
  */
 function search_kit_civicrm_permission(&$permissions) {
   $permissions['administer search_kit'] = [
-    E::ts('Search Kit: edit and delete searches'),
-    E::ts('Gives non-admin users access to the Search Kit UI to create, update and delete searches and displays'),
+    E::ts('SearchKit: edit and delete searches'),
+    E::ts('Gives non-admin users access to the SearchKit UI to create, update and delete searches and displays'),
   ];
 }
 

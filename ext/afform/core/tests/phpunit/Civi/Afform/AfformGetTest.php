@@ -55,6 +55,39 @@ class AfformGetTest extends \PHPUnit\Framework\TestCase implements HeadlessInter
     $this->assertArrayNotHasKey('base_module', $result);
   }
 
+  public function testGetLayoutWithEmptyNode() {
+    Afform::create(FALSE)
+      ->addValue('name', $this->formName)
+      ->addValue('title', 'Test Form')
+      ->addValue('layout', '<af-form><af-entity name="a"></af-entity><div></div></af-form>')
+      ->execute();
+
+    $layout = Afform::get(FALSE)
+      ->addWhere('name', '=', $this->formName)
+      ->execute()->single()['layout'];
+
+    // Ensure container elements like <div> always have #children even if empty
+    $this->assertEquals([], $layout[0]['#children'][1]['#children']);
+    $this->assertArrayNotHasKey('#children', $layout[0]['#children'][0]);
+  }
+
+  public function testAfformAutocomplete(): void {
+    $title = uniqid();
+    Afform::create()
+      ->addValue('name', $this->formName)
+      ->addValue('title', $title)
+      ->addValue('type', 'form')
+      ->execute();
+
+    $result = Afform::autocomplete()
+      ->setInput(substr($title, 0, 9))
+      ->execute();
+
+    $this->assertEquals($this->formName, $result[0]['id']);
+    $this->assertEquals($title, $result[0]['label']);
+    $this->assertEquals('fa-list-alt', $result[0]['icon']);
+  }
+
   public function testGetSearchDisplays() {
     Afform::create()
       ->addValue('name', $this->formName)

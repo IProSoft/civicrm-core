@@ -57,6 +57,10 @@ class CRM_Campaign_Info extends CRM_Core_Component_Info {
         ts('manage campaign'),
         ts('Create new campaigns, surveys and petitions, reserve respondents'),
       ],
+      'view campaign' => [
+        ts('view campaign'),
+        ts('View and search campaigns'),
+      ],
       'reserve campaign contacts' => [
         ts('reserve campaign contacts'),
         ts('Reserve campaign contacts for surveys and petitions'),
@@ -139,7 +143,7 @@ class CRM_Campaign_Info extends CRM_Core_Component_Info {
 
   /**
    * add shortcut to Create New.
-   * @param $shortCuts
+   * @param array $shortCuts
    */
   public function creatNewShortcut(&$shortCuts) {
     if (CRM_Core_Permission::check('manage campaign') ||
